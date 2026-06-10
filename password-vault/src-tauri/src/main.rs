@@ -41,6 +41,9 @@ pub fn run() {
             commands::lock_vault,
             commands::get_security_settings,
             commands::save_security_settings,
+            commands::get_expiring_entries,
+            commands::get_expired_entries,
+            commands::check_expiry_and_notify,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

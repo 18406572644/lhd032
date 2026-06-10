@@ -47,11 +47,22 @@
         <button @click="activeCategory = 'pwned'" class="text-sm text-danger hover:underline">查看</button>
       </div>
 
+      <div v-if="expiringCount > 0 && activeCategory !== 'expiring'" class="mx-6 mt-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <svg class="w-5 h-5 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          <span class="text-sm text-amber-400">有 <strong>{{ expiringCount }}</strong> 个密码即将过期或已过期，请及时更换！</span>
+        </div>
+        <button @click="activeCategory = 'expiring'" class="text-sm text-amber-400 hover:underline">查看</button>
+      </div>
+
       <div class="flex-1 overflow-y-auto px-6 py-4">
         <div v-if="filteredEntries.length === 0" class="flex flex-col items-center justify-center h-full text-text-muted/50">
           <svg v-if="activeCategory === 'pwned'" class="w-16 h-16 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          <svg v-else-if="activeCategory === 'expiring'" class="w-16 h-16 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
           <svg v-else class="w-16 h-16 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-          <p class="text-sm">{{ activeCategory === 'pwned' ? '没有发现泄露的密码' : '暂无密码条目' }}</p>
+          <p class="text-sm">
+            {{ activeCategory === 'pwned' ? '没有发现泄露的密码' : (activeCategory === 'expiring' ? '没有即将过期的密码' : '暂无密码条目') }}
+          </p>
         </div>
         <div v-else class="flex flex-col gap-3">
           <EntryCard
@@ -111,8 +122,27 @@ const pwnedCount = computed(() => {
   return entries.value.filter(e => e.is_pwned).length;
 });
 
+const expiringCount = computed(() => {
+  return entries.value.filter(e => {
+    const days = getDaysUntilExpiry(e);
+    return days !== null && days <= 7;
+  }).length;
+});
+
+function getDaysUntilExpiry(entry) {
+  if (!entry.expires_at) return null;
+  try {
+    const expiry = new Date(entry.expires_at);
+    const now = new Date();
+    const diff = expiry - now;
+    return Math.ceil(diff / (1000 * 60 * 60 * 24));
+  } catch {
+    return null;
+  }
+}
+
 const categoryCounts = computed(() => {
-  const counts = { all: entries.value.length, pwned: pwnedCount.value };
+  const counts = { all: entries.value.length, pwned: pwnedCount.value, expiring: expiringCount.value };
   for (const e of entries.value) {
     counts[e.category] = (counts[e.category] || 0) + 1;
   }
@@ -123,6 +153,11 @@ const filteredEntries = computed(() => {
   let list = entries.value;
   if (activeCategory.value === "pwned") {
     list = list.filter(e => e.is_pwned);
+  } else if (activeCategory.value === "expiring") {
+    list = list.filter(e => {
+      const days = getDaysUntilExpiry(e);
+      return days !== null && days <= 7;
+    });
   } else if (activeCategory.value !== "all") {
     list = list.filter(e => e.category === activeCategory.value);
   }
@@ -200,6 +235,42 @@ async function setupAutoScan() {
 
 function onSettingsSaved() {
   setupAutoScan();
+  checkExpiryAndNotify();
+}
+
+async function checkExpiryAndNotify() {
+  if (!isTauri) return;
+  try {
+    const result = await invoke("check_expiry_and_notify");
+    const total = result.expired_count + result.warning_3days_count + result.warning_7days_count;
+    if (total > 0) {
+      try {
+        const { isPermissionGranted, requestPermission, sendNotification } = await import("@tauri-apps/plugin-notification");
+        const granted = await isPermissionGranted();
+        if (!granted) {
+          await requestPermission();
+        }
+        if (await isPermissionGranted()) {
+          let title, body;
+          if (result.expired_count > 0) {
+            title = "密码过期提醒";
+            body = `有 ${result.expired_count} 个密码已过期，请尽快更换！`;
+          } else if (result.warning_3days_count > 0) {
+            title = "密码即将过期";
+            body = `有 ${result.warning_3days_count} 个密码将在3天内过期，请及时更换。`;
+          } else {
+            title = "密码即将过期";
+            body = `有 ${result.warning_7days_count} 个密码将在7天内过期，建议尽快更换。`;
+          }
+          sendNotification({ title, body });
+        }
+      } catch (notifErr) {
+        console.error("Expiry notification failed:", notifErr);
+      }
+    }
+  } catch (e) {
+    console.error("check expiry failed:", e);
+  }
 }
 
 function handleLock() {
@@ -232,6 +303,7 @@ onMounted(async () => {
   try {
     await loadEntries();
     await setupAutoScan();
+    await checkExpiryAndNotify();
   } catch (e) {
     console.error("MainInterface mount error:", e);
   }

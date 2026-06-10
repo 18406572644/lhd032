@@ -3,7 +3,11 @@
     'border rounded-xl px-5 py-4 hover:border-primary/30 transition-all duration-200 group animate-fade-in',
     entry.is_pwned
       ? 'bg-danger/10 border-danger/30'
-      : 'bg-surface-light/60 border-white/5'
+      : (expiryStatus === 'expired'
+          ? 'bg-danger/5 border-danger/20'
+          : (expiryStatus === 'warning-soon' || expiryStatus === 'warning-soon2'
+              ? 'bg-amber-500/5 border-amber-500/20'
+              : 'bg-surface-light/60 border-white/5'))
   ]">
     <div class="flex items-start justify-between gap-4">
       <div class="flex-1 min-w-0">
@@ -13,6 +17,18 @@
           <span v-if="entry.is_pwned" class="text-xs px-2 py-0.5 rounded-full bg-danger/20 text-danger flex items-center gap-1" title="该密码已在数据泄露中出现">
             <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
             已泄露 {{ entry.breach_count > 0 ? `(${entry.breach_count}次)` : '' }}
+          </span>
+          <span v-if="expiryStatus === 'expired'" class="text-xs px-2 py-0.5 rounded-full bg-danger/20 text-danger flex items-center gap-1" title="密码已过期">
+            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            已过期
+          </span>
+          <span v-else-if="expiryStatus === 'warning-soon2'" class="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 flex items-center gap-1" :title="`密码将在 ${daysUntilExpiry} 天后过期`">
+            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            {{ daysUntilExpiry }}天后过期
+          </span>
+          <span v-else-if="expiryStatus === 'warning-soon'" class="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 flex items-center gap-1" :title="`密码将在 ${daysUntilExpiry} 天后过期`">
+            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            {{ daysUntilExpiry }}天后过期
           </span>
         </div>
         <p class="text-text-muted text-sm truncate">{{ entry.username }}</p>
@@ -32,7 +48,7 @@
         <span v-else class="font-mono-pw text-text text-sm">{{ decryptedPassword || '解密中...' }}</span>
         <button @click="togglePassword" class="ml-2 p-1 rounded hover:bg-surface-lighter text-text-muted hover:text-text transition">
           <svg v-if="!showPassword" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-          <svg v-else class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+          <svg v-else class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
         </button>
       </div>
     </div>
@@ -42,15 +58,28 @@
         立即修改密码
       </button>
     </div>
+    <div v-else-if="expiryStatus === 'expired'" class="mt-3 flex items-center gap-2">
+      <button @click="$emit('edit', entry)" class="flex-1 py-2 px-3 bg-danger/20 hover:bg-danger/30 text-danger rounded-lg text-sm font-medium transition flex items-center justify-center gap-1.5">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+        密码已过期，立即更换
+      </button>
+    </div>
+    <div v-else-if="expiryStatus === 'warning-soon' || expiryStatus === 'warning-soon2'" class="mt-3 flex items-center gap-2">
+      <button @click="$emit('edit', entry)" class="flex-1 py-2 px-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 rounded-lg text-sm font-medium transition flex items-center justify-center gap-1.5">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+        密码即将过期，建议更换
+      </button>
+    </div>
     <div class="flex items-center gap-3 mt-2 text-xs text-text-muted/60">
       <span>{{ entry.created_at }}</span>
       <span v-if="entry.last_pwned_check" class="ml-auto">上次检测: {{ formatDate(entry.last_pwned_check) }}</span>
+      <span v-if="effectiveExpiryDate" class="ml-auto">过期日期: {{ formatDate(effectiveExpiryDate) }}</span>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 
 const isTauri = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
@@ -72,6 +101,35 @@ const categoryMap = {
 };
 
 const categoryLabel = categoryMap[props.entry.category] || props.entry.category;
+
+const effectiveExpiryDate = computed(() => {
+  if (props.entry.expires_at) {
+    return props.entry.expires_at;
+  }
+  return null;
+});
+
+const daysUntilExpiry = computed(() => {
+  if (!effectiveExpiryDate.value) return null;
+  try {
+    const expiry = new Date(effectiveExpiryDate.value);
+    const now = new Date();
+    const diff = expiry - now;
+    const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+    return days;
+  } catch {
+    return null;
+  }
+});
+
+const expiryStatus = computed(() => {
+  const days = daysUntilExpiry.value;
+  if (days === null) return 'none';
+  if (days < 0) return 'expired';
+  if (days <= 3) return 'warning-soon2';
+  if (days <= 7) return 'warning-soon';
+  return 'normal';
+});
 
 async function togglePassword() {
   if (!showPassword.value) {

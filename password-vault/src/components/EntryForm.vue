@@ -106,12 +106,55 @@
 
         <div>
           <label class="text-xs text-text-muted mb-1 block">分类</label>
-          <select v-model="form.category" class="w-full bg-bg border border-white/10 rounded-lg px-3 py-2 text-text text-sm focus:outline-none focus:border-primary/50 transition">
+          <select v-model="form.category" @change="onCategoryChange" class="w-full bg-bg border border-white/10 rounded-lg px-3 py-2 text-text text-sm focus:outline-none focus:border-primary/50 transition">
             <option value="website">网站</option>
             <option value="app">应用</option>
             <option value="bank">银行卡</option>
             <option value="note">安全笔记</option>
           </select>
+        </div>
+
+        <div class="border-t border-white/5 pt-4">
+          <div class="flex items-center gap-2 mb-3">
+            <svg class="w-4 h-4 text-text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            <span class="text-sm font-medium text-text">密码过期设置</span>
+          </div>
+          <div class="space-y-3 pl-6">
+            <div>
+              <label class="text-xs text-text-muted mb-1 block">轮换周期（天）</label>
+              <div class="flex gap-2">
+                <input
+                  v-model.number="form.rotation_days"
+                  type="number"
+                  min="1"
+                  placeholder="留空使用默认值"
+                  class="flex-1 bg-bg border border-white/10 rounded-lg px-3 py-2 text-text text-sm focus:outline-none focus:border-primary/50 transition"
+                />
+                <button
+                  @click="resetRotationDays"
+                  type="button"
+                  class="px-3 py-2 bg-surface-light/50 text-text-muted rounded-lg hover:bg-surface-light hover:text-text transition text-xs"
+                  title="恢复默认值"
+                >
+                  默认
+                </button>
+              </div>
+              <p v-if="defaultRotationDays" class="text-xs text-text-muted/60 mt-1">
+                {{ categoryLabel }}默认轮换周期: {{ defaultRotationDays }} 天
+              </p>
+            </div>
+            <div>
+              <label class="text-xs text-text-muted mb-1 block">过期日期（可选）</label>
+              <input
+                v-model="form.expires_at"
+                type="date"
+                class="w-full bg-bg border border-white/10 rounded-lg px-3 py-2 text-text text-sm focus:outline-none focus:border-primary/50 transition"
+              />
+              <p class="text-xs text-text-muted/60 mt-1">
+                留空则根据轮换周期自动计算
+              </p>
+            </div>
+          </div>
         </div>
 
         <div v-if="isEdit && editEntry?.history && editEntry.history.length > 0" class="border-t border-white/5 pt-4">
@@ -238,14 +281,58 @@ const pwnedCheck = reactive({
   breach_count: 0
 });
 
+const defaultRotationDaysMap = {
+  website: 180,
+  app: 180,
+  bank: 90,
+  note: 365
+};
+
+const categoryLabelMap = {
+  website: "网站",
+  app: "应用",
+  bank: "银行卡",
+  note: "安全笔记"
+};
+
 const form = reactive({
   name: props.editEntry?.name || "",
   username: props.editEntry?.username || "",
   password: "",
   url: props.editEntry?.url || "",
   notes: props.editEntry?.notes || "",
-  category: props.editEntry?.category || "website"
+  category: props.editEntry?.category || "website",
+  rotation_days: props.editEntry?.rotation_days || null,
+  expires_at: props.editEntry?.expires_at ? formatDateForInput(props.editEntry.expires_at) : ""
 });
+
+function formatDateForInput(dateStr) {
+  try {
+    const date = new Date(dateStr);
+    return date.toISOString().split("T")[0];
+  } catch {
+    return "";
+  }
+}
+
+const defaultRotationDays = computed(() => {
+  return defaultRotationDaysMap[form.category] || null;
+});
+
+const categoryLabel = computed(() => {
+  return categoryLabelMap[form.category] || form.category;
+});
+
+function onCategoryChange() {
+  if (!form.rotation_days) {
+    form.rotation_days = defaultRotationDaysMap[form.category] || null;
+  }
+}
+
+function resetRotationDays() {
+  form.rotation_days = defaultRotationDaysMap[form.category] || null;
+  form.expires_at = "";
+}
 
 const genLength = ref(16);
 const genUpper = ref(true);
@@ -425,7 +512,9 @@ async function handleSave() {
       created_at: props.editEntry?.created_at || new Date().toISOString().split("T")[0],
       is_pwned: pwnedCheck.is_pwned,
       breach_count: pwnedCheck.breach_count,
-      last_pwned_check: pwnedCheck.checked ? new Date().toISOString() : (props.editEntry?.last_pwned_check || "")
+      last_pwned_check: pwnedCheck.checked ? new Date().toISOString() : (props.editEntry?.last_pwned_check || ""),
+      rotation_days: form.rotation_days ? Number(form.rotation_days) : null,
+      expires_at: form.expires_at ? new Date(form.expires_at).toISOString() : null
     };
     if (isEdit.value) {
       await invoke("update_entry", { entry });
@@ -460,6 +549,8 @@ watch(() => props.editEntry, (newVal) => {
     form.url = newVal.url || "";
     form.notes = newVal.notes || "";
     form.category = newVal.category || "website";
+    form.rotation_days = newVal.rotation_days || null;
+    form.expires_at = newVal.expires_at ? formatDateForInput(newVal.expires_at) : "";
     passwordLocked.value = !newVal.is_pwned;
     pwnedCheck.checked = !!newVal.last_pwned_check;
     pwnedCheck.is_pwned = !!newVal.is_pwned;
@@ -471,6 +562,8 @@ watch(() => props.editEntry, (newVal) => {
     form.url = "";
     form.notes = "";
     form.category = "website";
+    form.rotation_days = null;
+    form.expires_at = "";
     passwordLocked.value = false;
     pwnedCheck.checked = false;
     pwnedCheck.is_pwned = false;

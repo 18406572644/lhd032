@@ -1,5 +1,5 @@
 use crate::crypto;
-use crate::storage::{VaultEntry, VaultStorage, PasswordHistory, MAX_HISTORY_ENTRIES};
+use crate::storage::{VaultEntry, VaultStorage, PasswordHistory, MAX_HISTORY_ENTRIES, ExpiryStatus};
 use crate::hibp::{HibpManager, HibpSettings, PwnedResult};
 use std::sync::Mutex;
 use tauri::State;
@@ -123,6 +123,19 @@ pub fn add_entry(entry: VaultEntry, vault: State<AppVault>, key_state: State<Mas
     let encrypted = crypto::encrypt(&entry.encrypted_password, &master_key, &entry.id)?;
     let mut encrypted_entry = entry.clone();
     encrypted_entry.encrypted_password = encrypted;
+
+    if encrypted_entry.rotation_days.is_none() {
+        encrypted_entry.rotation_days = VaultEntry::default_rotation_days(&encrypted_entry.category);
+    }
+
+    if encrypted_entry.expires_at.is_none() {
+        if let Some(rd) = encrypted_entry.rotation_days {
+            let now = Utc::now();
+            let expiry = now + chrono::Duration::days(rd as i64);
+            encrypted_entry.expires_at = Some(expiry.to_rfc3339());
+        }
+    }
+
     let storage = vault.0.lock().map_err(|e| e.to_string())?;
     storage.add_entry(encrypted_entry);
     Ok("ok".to_string())
@@ -168,8 +181,30 @@ pub fn update_entry(entry: VaultEntry, vault: State<AppVault>, key_state: State<
             } else {
                 encrypted_entry.history = prev.history.clone();
             }
+
+            if encrypted_entry.rotation_days.is_none() {
+                encrypted_entry.rotation_days = prev.rotation_days
+                    .or_else(|| VaultEntry::default_rotation_days(&encrypted_entry.category));
+            }
+
+            if encrypted_entry.expires_at.is_none() {
+                if let Some(rd) = encrypted_entry.rotation_days {
+                    let new_expiry = Utc::now() + chrono::Duration::days(rd as i64);
+                    encrypted_entry.expires_at = Some(new_expiry.to_rfc3339());
+                }
+            }
         }
         encrypted_entry.encrypted_password = crypto::encrypt(&entry.encrypted_password, &master_key, &entry.id)?;
+    }
+
+    if encrypted_entry.rotation_days.is_none() && encrypted_entry.expires_at.is_none() {
+        if let Some(prev) = existing.as_ref() {
+            encrypted_entry.rotation_days = prev.rotation_days;
+            encrypted_entry.expires_at = prev.expires_at.clone();
+        }
+        if encrypted_entry.rotation_days.is_none() {
+            encrypted_entry.rotation_days = VaultEntry::default_rotation_days(&encrypted_entry.category);
+        }
     }
     let storage = vault.0.lock().map_err(|e| e.to_string())?;
     storage.update_entry(encrypted_entry);
@@ -360,4 +395,58 @@ pub fn save_security_settings(settings: SecuritySettings, security: State<AppSec
     let mut manager = security.0.lock().map_err(|e| e.to_string())?;
     manager.save_settings(settings);
     Ok("ok".to_string())
+}
+
+#[tauri::command]
+pub fn get_expiring_entries(vault: State<AppVault>) -> Result<Vec<VaultEntry>, String> {
+    let storage = vault.0.lock().map_err(|e| e.to_string())?;
+    let entries = storage.get_entries();
+    Ok(entries.into_iter().filter(|e| {
+        let status = e.get_expiry_status();
+        status != ExpiryStatus::None && status != ExpiryStatus::Normal
+    }).collect())
+}
+
+#[tauri::command]
+pub fn get_expired_entries(vault: State<AppVault>) -> Result<Vec<VaultEntry>, String> {
+    let storage = vault.0.lock().map_err(|e| e.to_string())?;
+    let entries = storage.get_entries();
+    Ok(entries.into_iter().filter(|e| {
+        e.get_expiry_status() == ExpiryStatus::Expired
+    }).collect())
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ExpiryNotificationResult {
+    pub expired_count: usize,
+    pub warning_3days_count: usize,
+    pub warning_7days_count: usize,
+    pub notified: bool,
+}
+
+#[tauri::command]
+pub fn check_expiry_and_notify(vault: State<AppVault>) -> Result<ExpiryNotificationResult, String> {
+    let storage = vault.0.lock().map_err(|e| e.to_string())?;
+    let entries = storage.get_entries();
+    drop(storage);
+
+    let mut expired = Vec::new();
+    let mut warning_3days = Vec::new();
+    let mut warning_7days = Vec::new();
+
+    for entry in &entries {
+        match entry.get_expiry_status() {
+            ExpiryStatus::Expired => expired.push(entry),
+            ExpiryStatus::WarningSoon2 => warning_3days.push(entry),
+            ExpiryStatus::WarningSoon => warning_7days.push(entry),
+            _ => {}
+        }
+    }
+
+    Ok(ExpiryNotificationResult {
+        expired_count: expired.len(),
+        warning_3days_count: warning_3days.len(),
+        warning_7days_count: warning_7days.len(),
+        notified: false,
+    })
 }
