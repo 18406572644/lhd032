@@ -1,9 +1,10 @@
 use sha1::{Digest, Sha1};
 use std::collections::HashSet;
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Write, Read};
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 
@@ -41,11 +42,20 @@ pub struct PwnedResult {
     pub breach_count: u64,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ScanProgress {
+    pub current: usize,
+    pub total: usize,
+    pub is_running: bool,
+}
+
 pub struct HibpManager {
     settings: Mutex<HibpSettings>,
     offline_hashes: Mutex<Option<HashSet<String>>>,
     settings_path: PathBuf,
     offline_dir: PathBuf,
+    scan_cancelled: AtomicBool,
+    scan_running: AtomicBool,
 }
 
 impl HibpManager {
@@ -69,6 +79,8 @@ impl HibpManager {
             offline_hashes: Mutex::new(None),
             settings_path,
             offline_dir,
+            scan_cancelled: AtomicBool::new(false),
+            scan_running: AtomicBool::new(false),
         }
     }
 
@@ -92,6 +104,22 @@ impl HibpManager {
         self.save_settings(settings);
     }
 
+    pub fn is_scan_running(&self) -> bool {
+        self.scan_running.load(Ordering::SeqCst)
+    }
+
+    pub fn cancel_scan(&self) {
+        self.scan_cancelled.store(true, Ordering::SeqCst);
+    }
+
+    pub fn reset_cancel_flag(&self) {
+        self.scan_cancelled.store(false, Ordering::SeqCst);
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.scan_cancelled.load(Ordering::SeqCst)
+    }
+
     fn sha1_hash(password: &str) -> String {
         let mut hasher = Sha1::new();
         hasher.update(password.as_bytes());
@@ -108,6 +136,7 @@ impl HibpManager {
 
         let client = reqwest::blocking::Client::builder()
             .user_agent("PasswordVault-App/1.0")
+            .timeout(std::time::Duration::from_secs(10))
             .build()
             .map_err(|e| e.to_string())?;
 
@@ -128,6 +157,45 @@ impl HibpManager {
                 let hash_suffix = parts[0].trim();
                 let count: u64 = parts[1].trim().parse().unwrap_or(0);
                 if hash_suffix.eq_ignore_ascii_case(suffix) {
+                    return Ok((true, count));
+                }
+            }
+        }
+
+        Ok((false, 0))
+    }
+
+    pub async fn check_password_online_async(&self, password: &str) -> Result<(bool, u64), String> {
+        let hash = Self::sha1_hash(password);
+        let prefix = &hash[..5];
+        let suffix = hash[5..].to_string();
+
+        let url = format!("{}{}", HIBP_API_URL, prefix);
+
+        let client = reqwest::Client::builder()
+            .user_agent("PasswordVault-App/1.0")
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        let response = client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("HIBP API request failed: {}", e))?;
+
+        if !response.status().is_success() {
+            return Err(format!("HIBP API returned status: {}", response.status()));
+        }
+
+        let body = response.text().await.map_err(|e| e.to_string())?;
+
+        for line in body.lines() {
+            let parts: Vec<&str> = line.split(':').collect();
+            if parts.len() == 2 {
+                let hash_suffix = parts[0].trim();
+                let count: u64 = parts[1].trim().parse().unwrap_or(0);
+                if hash_suffix.eq_ignore_ascii_case(&suffix) {
                     return Ok((true, count));
                 }
             }
@@ -190,42 +258,6 @@ impl HibpManager {
         self.offline_dir.join(HIBP_OFFLINE_FILE)
     }
 
-    pub fn download_offline_db(
-        &self,
-        on_progress: impl Fn(u64, u64) + Send + 'static,
-    ) -> Result<(), String> {
-        let url = "https://downloads.pwnedpasswords.com/passwords/pwned-passwords-sha1-ordered-by-hash-v8.7z";
-        let archive_path = self.offline_dir.join("pwned-passwords.7z");
-
-        let client = reqwest::blocking::Client::builder()
-            .user_agent("PasswordVault-App/1.0")
-            .build()
-            .map_err(|e| e.to_string())?;
-
-        let mut response = client
-            .get(url)
-            .send()
-            .map_err(|e| format!("Download failed: {}", e))?;
-
-        let total_size = response.content_length().unwrap_or(0);
-        let mut downloaded: u64 = 0;
-
-        let mut file = File::create(&archive_path).map_err(|e| e.to_string())?;
-        let mut buf = [0u8; 8192];
-
-        loop {
-            let n = response.read(&mut buf).map_err(|e| e.to_string())?;
-            if n == 0 {
-                break;
-            }
-            file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
-            downloaded += n as u64;
-            on_progress(downloaded, total_size);
-        }
-
-        Ok(())
-    }
-
     pub fn check_password(&self, password: &str) -> Result<(bool, u64), String> {
         let settings = self.settings.lock().unwrap();
 
@@ -237,18 +269,46 @@ impl HibpManager {
         }
     }
 
-    pub fn batch_check(
+    pub async fn check_password_async(&self, password: &str) -> Result<(bool, u64), String> {
+        let settings = self.settings.lock().unwrap().clone();
+
+        if settings.offline_mode {
+            let pwned = self.check_password_offline(password)?;
+            Ok((pwned, if pwned { 1 } else { 0 }))
+        } else {
+            self.check_password_online_async(password).await
+        }
+    }
+
+    pub async fn batch_check_async(
         &self,
         passwords: Vec<(String, String)>,
-        on_progress: impl Fn(usize, usize) + Send + 'static,
+        on_progress: impl Fn(usize, usize) + Send + Sync + 'static,
     ) -> Vec<PwnedResult> {
+        self.scan_running.store(true, Ordering::SeqCst);
+        self.reset_cancel_flag();
+
         let total = passwords.len();
         let mut results = Vec::new();
 
+        let settings = self.settings.lock().unwrap().clone();
+        let use_offline = settings.offline_mode;
+
         for (i, (entry_id, password)) in passwords.iter().enumerate() {
-            let (is_pwned, breach_count) = match self.check_password(password) {
-                Ok(r) => r,
-                Err(_) => (false, 0),
+            if self.is_cancelled() {
+                break;
+            }
+
+            let (is_pwned, breach_count) = if use_offline {
+                match self.check_password_offline(password) {
+                    Ok(pwned) => (pwned, if pwned { 1 } else { 0 }),
+                    Err(_) => (false, 0),
+                }
+            } else {
+                match self.check_password_online_async(password).await {
+                    Ok(r) => r,
+                    Err(_) => (false, 0),
+                }
             };
 
             results.push(PwnedResult {
@@ -258,8 +318,11 @@ impl HibpManager {
             });
 
             on_progress(i + 1, total);
+
+            tokio::task::yield_now().await;
         }
 
+        self.scan_running.store(false, Ordering::SeqCst);
         results
     }
 }

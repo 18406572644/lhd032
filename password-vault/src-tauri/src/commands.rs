@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 pub struct AppVault(pub Mutex<VaultStorage>);
 pub struct MasterKey(pub Mutex<Option<[u8; 32]>>);
-pub struct AppHibp(pub Mutex<HibpManager>);
+pub struct AppHibp(pub HibpManager);
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SecuritySettings {
@@ -179,14 +179,12 @@ pub fn generate_password(length: usize, use_uppercase: bool, use_lowercase: bool
 
 #[tauri::command]
 pub fn get_hibp_settings(hibp: State<AppHibp>) -> Result<HibpSettings, String> {
-    let manager = hibp.0.lock().map_err(|e| e.to_string())?;
-    Ok(manager.get_settings())
+    Ok(hibp.0.get_settings())
 }
 
 #[tauri::command]
 pub fn save_hibp_settings(settings: HibpSettings, hibp: State<AppHibp>) -> Result<String, String> {
-    let manager = hibp.0.lock().map_err(|e| e.to_string())?;
-    manager.save_settings(settings);
+    hibp.0.save_settings(settings);
     Ok("ok".to_string())
 }
 
@@ -195,22 +193,24 @@ pub fn check_single_password(
     password: String,
     hibp: State<AppHibp>,
 ) -> Result<(bool, u64), String> {
-    let manager = hibp.0.lock().map_err(|e| e.to_string())?;
-    manager.check_password(&password)
+    hibp.0.check_password(&password)
 }
 
 #[tauri::command]
-pub fn batch_scan_passwords(
-    vault: State<AppVault>,
-    key_state: State<MasterKey>,
-    hibp: State<AppHibp>,
+pub async fn batch_scan_passwords(
+    vault: State<'_, AppVault>,
+    key_state: State<'_, MasterKey>,
+    hibp: State<'_, AppHibp>,
 ) -> Result<Vec<PwnedResult>, String> {
-    let mk = key_state.0.lock().map_err(|e| e.to_string())?;
-    let master_key = mk.ok_or("not unlocked")?;
+    let master_key = {
+        let mk = key_state.0.lock().map_err(|e| e.to_string())?;
+        mk.ok_or_else(|| "not unlocked".to_string())?
+    };
 
-    let storage = vault.0.lock().map_err(|e| e.to_string())?;
-    let entries = storage.get_entries();
-    drop(storage);
+    let entries = {
+        let storage = vault.0.lock().map_err(|e| e.to_string())?;
+        storage.get_entries()
+    };
 
     let mut passwords: Vec<(String, String)> = Vec::new();
     for entry in &entries {
@@ -220,38 +220,43 @@ pub fn batch_scan_passwords(
         }
     }
 
-    let manager = hibp.0.lock().map_err(|e| e.to_string())?;
-    let results = manager.batch_check(passwords, |_, _| {});
-
-    let storage = vault.0.lock().map_err(|e| e.to_string())?;
-    let now = Utc::now().to_rfc3339();
-    for result in &results {
-        let entries = storage.get_entries();
-        if let Some(pos) = entries.iter().position(|e| e.id == result.entry_id) {
-            let mut entry = entries[pos].clone();
-            entry.is_pwned = result.is_pwned;
-            entry.breach_count = result.breach_count;
-            entry.last_pwned_check = Some(now.clone());
-            storage.update_entry(entry);
-        }
+    if hibp.0.is_scan_running() {
+        return Err("scan already running".to_string());
     }
 
-    let manager = hibp.0.lock().map_err(|e| e.to_string())?;
-    manager.update_last_scan(now);
+    let results = hibp.0.batch_check_async(passwords, |_, _| {}).await;
+
+    let now = Utc::now().to_rfc3339();
+
+    {
+        let storage = vault.0.lock().map_err(|e| e.to_string())?;
+        storage.batch_update_pwned_status(&results, &now);
+    }
+
+    hibp.0.update_last_scan(now);
 
     Ok(results)
 }
 
 #[tauri::command]
+pub fn is_scan_running(hibp: State<AppHibp>) -> Result<bool, String> {
+    Ok(hibp.0.is_scan_running())
+}
+
+#[tauri::command]
+pub fn cancel_scan(hibp: State<AppHibp>) -> Result<String, String> {
+    hibp.0.cancel_scan();
+    Ok("ok".to_string())
+}
+
+#[tauri::command]
 pub fn load_offline_hibp_db(hibp: State<AppHibp>) -> Result<bool, String> {
-    let manager = hibp.0.lock().map_err(|e| e.to_string())?;
-    manager.load_offline_db()
+    hibp.0.load_offline_db()
 }
 
 #[tauri::command]
 pub fn is_offline_db_loaded(hibp: State<AppHibp>) -> Result<bool, String> {
-    let manager = hibp.0.lock().map_err(|e| e.to_string())?;
-    Ok(manager.is_offline_loaded())
+    Ok(hibp.0.is_offline_loaded())
 }
 
 #[tauri::command]

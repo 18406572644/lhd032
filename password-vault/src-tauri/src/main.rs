@@ -15,7 +15,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .manage(AppVault(Mutex::new(VaultStorage::new())))
         .manage(MasterKey(Mutex::new(None)))
-        .manage(AppHibp(Mutex::new(HibpManager::new())))
+        .manage(AppHibp(HibpManager::new()))
         .manage(AppSecurity(Mutex::new(SecurityManager::new())))
         .invoke_handler(tauri::generate_handler![
             commands::setup_master_password,
@@ -31,6 +31,8 @@ pub fn run() {
             commands::save_hibp_settings,
             commands::check_single_password,
             commands::batch_scan_passwords,
+            commands::is_scan_running,
+            commands::cancel_scan,
             commands::load_offline_hibp_db,
             commands::is_offline_db_loaded,
             commands::get_pwned_entries,

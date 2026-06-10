@@ -101,6 +101,18 @@ impl VaultStorage {
         }
     }
 
+    pub fn batch_update_pwned_status(&self, results: &[crate::hibp::PwnedResult], check_time: &str) {
+        let mut data = self.data.lock().unwrap();
+        for result in results {
+            if let Some(pos) = data.entries.iter().position(|e| e.id == result.entry_id) {
+                data.entries[pos].is_pwned = result.is_pwned;
+                data.entries[pos].breach_count = result.breach_count;
+                data.entries[pos].last_pwned_check = Some(check_time.to_string());
+            }
+        }
+        self.save(&data);
+    }
+
     pub fn delete_entry(&self, id: &str) {
         let mut data = self.data.lock().unwrap();
         data.entries.retain(|e| e.id != id);
