@@ -24,6 +24,13 @@
           {{ scanning ? '扫描中...' : '一键扫描' }}
         </button>
         <button
+          @click="handleLock"
+          class="p-2 rounded-lg hover:bg-danger/20 text-text-muted hover:text-danger transition"
+          title="锁定密码库"
+        >
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </button>
+        <button
           @click="showSettings = true"
           class="p-2 rounded-lg hover:bg-surface-light text-text-muted hover:text-text transition"
           title="设置"
@@ -87,6 +94,8 @@ import CategoryNav from "./CategoryNav.vue";
 import EntryCard from "./EntryCard.vue";
 import EntryForm from "./EntryForm.vue";
 import SettingsDialog from "./SettingsDialog.vue";
+
+const emit = defineEmits(["lock"]);
 
 const entries = ref([]);
 const activeCategory = ref("all");
@@ -183,6 +192,12 @@ async function setupAutoScan() {
 
 function onSettingsSaved() {
   setupAutoScan();
+}
+
+function handleLock() {
+  if (confirm("确定要锁定密码库吗？需要重新输入主密码才能解锁。")) {
+    emit("lock");
+  }
 }
 
 function openCreate() {

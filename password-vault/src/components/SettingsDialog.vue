@@ -1,6 +1,6 @@
 <template>
   <div class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" @click.self="$emit('close')">
-    <div class="bg-surface border border-white/10 rounded-2xl w-[480px] max-h-[80vh] overflow-y-auto shadow-2xl animate-fade-in">
+    <div class="bg-surface border border-white/10 rounded-2xl w-[520px] max-h-[85vh] overflow-y-auto shadow-2xl animate-fade-in">
       <div class="px-6 py-4 border-b border-white/5 flex items-center justify-between">
         <h2 class="text-lg font-semibold text-text flex items-center gap-2">
           <svg class="w-5 h-5 text-primary-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -13,6 +13,50 @@
 
       <div class="px-6 py-4 flex flex-col gap-6">
         <div class="space-y-4">
+          <h3 class="text-sm font-semibold text-text flex items-center gap-2">
+            <svg class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            自动锁定
+          </h3>
+
+          <div>
+            <label class="text-sm text-text block mb-2">无操作超时锁定</label>
+            <select
+              v-model.number="securitySettings.auto_lock_timeout_minutes"
+              class="w-full bg-bg border border-white/10 rounded-lg px-3 py-2 text-text text-sm focus:outline-none focus:border-primary/50 transition"
+            >
+              <option :value="1">1 分钟</option>
+              <option :value="5">5 分钟（推荐）</option>
+              <option :value="10">10 分钟</option>
+              <option :value="30">30 分钟</option>
+              <option :value="0">从不</option>
+            </select>
+            <p class="text-xs text-text-muted mt-1.5">超过指定时间无鼠标/键盘操作将自动锁定密码库</p>
+          </div>
+
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm text-text">最小化时立即锁定</p>
+              <p class="text-xs text-text-muted mt-0.5">窗口最小化后立即清除内存中的主密钥</p>
+            </div>
+            <button
+              @click="securitySettings.lock_on_minimize = !securitySettings.lock_on_minimize"
+              :class="[
+                'relative w-11 h-6 rounded-full transition-colors duration-200',
+                securitySettings.lock_on_minimize ? 'bg-primary' : 'bg-surface-lighter'
+              ]"
+            >
+              <span
+                :class="[
+                  'absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform duration-200 shadow',
+                  securitySettings.lock_on_minimize ? 'translate-x-5' : 'translate-x-0'
+                ]"
+              />
+            </button>
+          </div>
+        </div>
+
+        <div class="pt-4 border-t border-white/5">
+          <div class="space-y-4">
           <h3 class="text-sm font-semibold text-text flex items-center gap-2">
             <svg class="w-4 h-4 text-danger" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             密码泄露检测 (HIBP)
@@ -113,6 +157,7 @@
               </p>
             </div>
           </div>
+          </div>
         </div>
 
         <div class="pt-4 border-t border-white/5">
@@ -154,6 +199,11 @@ const settings = reactive({
   offline_db_size_mb: 0.0
 });
 
+const securitySettings = reactive({
+  auto_lock_timeout_minutes: 5,
+  lock_on_minimize: false,
+});
+
 const downloading = ref(false);
 const downloadProgress = ref(0);
 
@@ -164,11 +214,18 @@ async function loadSettings() {
   } catch (e) {
     console.error(e);
   }
+  try {
+    const s = await invoke("get_security_settings");
+    Object.assign(securitySettings, s);
+  } catch (e) {
+    console.error(e);
+  }
 }
 
 async function handleSave() {
   try {
     await invoke("save_hibp_settings", { settings });
+    await invoke("save_security_settings", { settings: securitySettings });
     emit("saved");
     emit("close");
   } catch (e) {

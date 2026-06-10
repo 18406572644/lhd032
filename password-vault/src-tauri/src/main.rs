@@ -3,7 +3,7 @@ mod crypto;
 mod storage;
 mod hibp;
 
-use commands::{AppVault, MasterKey, AppHibp};
+use commands::{AppVault, MasterKey, AppHibp, AppSecurity, SecurityManager};
 use storage::VaultStorage;
 use hibp::HibpManager;
 use std::sync::Mutex;
@@ -16,6 +16,7 @@ pub fn run() {
         .manage(AppVault(Mutex::new(VaultStorage::new())))
         .manage(MasterKey(Mutex::new(None)))
         .manage(AppHibp(Mutex::new(HibpManager::new())))
+        .manage(AppSecurity(Mutex::new(SecurityManager::new())))
         .invoke_handler(tauri::generate_handler![
             commands::setup_master_password,
             commands::verify_master_password,
@@ -33,6 +34,9 @@ pub fn run() {
             commands::load_offline_hibp_db,
             commands::is_offline_db_loaded,
             commands::get_pwned_entries,
+            commands::lock_vault,
+            commands::get_security_settings,
+            commands::save_security_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

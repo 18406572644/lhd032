@@ -4,10 +4,73 @@ use crate::hibp::{HibpManager, HibpSettings, PwnedResult};
 use std::sync::Mutex;
 use tauri::State;
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
 
 pub struct AppVault(pub Mutex<VaultStorage>);
 pub struct MasterKey(pub Mutex<Option<[u8; 32]>>);
 pub struct AppHibp(pub Mutex<HibpManager>);
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SecuritySettings {
+    pub auto_lock_timeout_minutes: i64,
+    pub lock_on_minimize: bool,
+}
+
+impl Default for SecuritySettings {
+    fn default() -> Self {
+        SecuritySettings {
+            auto_lock_timeout_minutes: 5,
+            lock_on_minimize: false,
+        }
+    }
+}
+
+pub struct AppSecurity(pub Mutex<SecurityManager>);
+
+pub struct SecurityManager {
+    settings: SecuritySettings,
+    settings_path: PathBuf,
+}
+
+impl SecurityManager {
+    pub fn new() -> Self {
+        let app_data = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
+        let vault_dir = app_data.join("password-vault");
+        fs::create_dir_all(&vault_dir).ok();
+        let settings_path = vault_dir.join("security-settings.json");
+
+        let settings = if settings_path.exists() {
+            let content = fs::read_to_string(&settings_path).unwrap_or_default();
+            serde_json::from_str(&content).unwrap_or_default()
+        } else {
+            SecuritySettings::default()
+        };
+
+        SecurityManager {
+            settings,
+            settings_path,
+        }
+    }
+
+    pub fn get_settings(&self) -> SecuritySettings {
+        self.settings.clone()
+    }
+
+    pub fn save_settings(&mut self, settings: SecuritySettings) {
+        self.settings = settings.clone();
+        if let Ok(content) = serde_json::to_string_pretty(&settings) {
+            fs::write(&self.settings_path, content).ok();
+        }
+    }
+}
+
+impl Default for SecurityManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[tauri::command]
 pub fn setup_master_password(password: String, vault: State<AppVault>) -> Result<String, String> {
@@ -173,4 +236,24 @@ pub fn get_pwned_entries(vault: State<AppVault>) -> Result<Vec<VaultEntry>, Stri
     let storage = vault.0.lock().map_err(|e| e.to_string())?;
     let entries = storage.get_entries();
     Ok(entries.into_iter().filter(|e| e.is_pwned).collect())
+}
+
+#[tauri::command]
+pub fn lock_vault(key_state: State<MasterKey>) -> Result<String, String> {
+    let mut mk = key_state.0.lock().map_err(|e| e.to_string())?;
+    *mk = None;
+    Ok("ok".to_string())
+}
+
+#[tauri::command]
+pub fn get_security_settings(security: State<AppSecurity>) -> Result<SecuritySettings, String> {
+    let manager = security.0.lock().map_err(|e| e.to_string())?;
+    Ok(manager.get_settings())
+}
+
+#[tauri::command]
+pub fn save_security_settings(settings: SecuritySettings, security: State<AppSecurity>) -> Result<String, String> {
+    let mut manager = security.0.lock().map_err(|e| e.to_string())?;
+    manager.save_settings(settings);
+    Ok("ok".to_string())
 }
