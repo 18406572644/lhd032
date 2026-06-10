@@ -4,10 +4,10 @@
       <div class="relative">
         <div class="absolute inset-0 rounded-full bg-primary/20 animate-breathe"></div>
         <svg class="relative w-24 h-24 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-          <circle cx="12" cy="16.5" r="1.5" class="animate-breathe" fill="currentColor" stroke="none" />
-          <line x1="12" y1="18" x2="12" y2="20" stroke-width="2" class="animate-breathe" />
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          <circle cx="12" cy="16.5" r="1.5" class="animate-breathe" fill="currentColor" stroke="none"></circle>
+          <line x1="12" y1="18" x2="12" y2="20" stroke-width="2" class="animate-breathe"></line>
         </svg>
       </div>
 
@@ -52,6 +52,8 @@
 import { ref, onMounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 
+const isTauri = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
+
 const emit = defineEmits(["unlocked"]);
 
 const isInit = ref(true);
@@ -61,6 +63,10 @@ const error = ref("");
 const loading = ref(false);
 
 onMounted(async () => {
+  if (!isTauri) {
+    isInit.value = false;
+    return;
+  }
   try {
     isInit.value = await invoke("is_vault_initialized");
   } catch (e) {
@@ -71,6 +77,12 @@ onMounted(async () => {
 async function handleSubmit() {
   error.value = "";
   loading.value = true;
+
+  if (!isTauri) {
+    error.value = "Tauri 运行时不可用";
+    loading.value = false;
+    return;
+  }
 
   try {
     if (!isInit.value) {

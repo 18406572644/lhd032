@@ -9,9 +9,10 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import UnlockPage from "./components/UnlockPage.vue";
 import MainInterface from "./components/MainInterface.vue";
+
+const isTauri = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
 
 const unlocked = ref(false);
 
@@ -34,6 +35,7 @@ const ACTIVITY_EVENTS = [
 ];
 
 async function loadSecuritySettings() {
+  if (!isTauri) return;
   try {
     const settings = await invoke("get_security_settings");
     securitySettings.value = settings;
@@ -73,10 +75,12 @@ function removeActivityListeners() {
 async function lockVault() {
   if (!unlocked.value) return;
 
-  try {
-    await invoke("lock_vault");
-  } catch (e) {
-    console.error("Failed to lock vault:", e);
+  if (isTauri) {
+    try {
+      await invoke("lock_vault");
+    } catch (e) {
+      console.error("Failed to lock vault:", e);
+    }
   }
 
   if (idleTimer) {
@@ -95,7 +99,16 @@ async function onVaultUnlocked() {
 }
 
 async function setupWindowListeners() {
-  const appWindow = getCurrentWindow();
+  if (!isTauri) return;
+
+  let appWindow;
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    appWindow = getCurrentWindow();
+  } catch (e) {
+    console.error("Failed to get current window:", e);
+    return;
+  }
 
   try {
     unlistenClose = await appWindow.onCloseRequested(() => {
@@ -145,8 +158,12 @@ watch(
 );
 
 onMounted(async () => {
-  await loadSecuritySettings();
-  await setupWindowListeners();
+  try {
+    await loadSecuritySettings();
+    await setupWindowListeners();
+  } catch (e) {
+    console.error("App mount initialization error:", e);
+  }
 });
 
 onUnmounted(() => {

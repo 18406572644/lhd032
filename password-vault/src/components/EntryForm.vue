@@ -4,7 +4,7 @@
       <div class="px-6 py-4 border-b border-white/5 flex items-center justify-between">
         <h2 class="text-lg font-semibold text-text">{{ isEdit ? '编辑条目' : '新建条目' }}</h2>
         <button @click="$emit('close')" class="p-1 rounded-lg hover:bg-surface-lighter text-text-muted hover:text-text transition">
-          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
         </button>
       </div>
 
@@ -25,24 +25,24 @@
             <div class="flex-1 relative">
               <input v-model="form.password" :type="showPw ? 'text' : 'password'" @blur="checkPasswordPwned" class="w-full bg-bg border border-white/10 rounded-lg px-3 py-2 pr-10 text-text text-sm font-mono-pw focus:outline-none focus:border-primary/50 transition" placeholder="密码" />
               <button @click="showPw = !showPw" class="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-text-muted hover:text-text transition">
-                <svg v-if="!showPw" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                <svg v-else class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                <svg v-if="!showPw" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                <svg v-else class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
               </button>
             </div>
             <button @click="showGenerator = !showGenerator" class="px-3 py-2 bg-primary/20 text-primary-light rounded-lg hover:bg-primary/30 transition text-sm flex items-center gap-1" title="密码生成器">
-              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
               生成
             </button>
           </div>
           <div v-if="pwnedCheck.is_pwned" class="mt-2 p-2 bg-danger/10 border border-danger/30 rounded-lg flex items-start gap-2">
-            <svg class="w-4 h-4 text-danger flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <svg class="w-4 h-4 text-danger flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
             <div>
               <p class="text-xs text-danger font-medium">此密码已在数据泄露中出现！</p>
               <p class="text-xs text-danger/70">出现次数: {{ pwnedCheck.breach_count }} 次，建议立即更换</p>
             </div>
           </div>
           <div v-else-if="pwnedCheck.checked && form.password" class="mt-2 p-2 bg-success/10 border border-success/30 rounded-lg flex items-center gap-2">
-            <svg class="w-4 h-4 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            <svg class="w-4 h-4 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
             <p class="text-xs text-success">密码安全，未在已知数据泄露中发现</p>
           </div>
         </div>
@@ -102,6 +102,8 @@
 import { ref, reactive, computed } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 
+const isTauri = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
+
 const props = defineProps({
   editEntry: { type: Object, default: null }
 });
@@ -134,6 +136,7 @@ const genDigits = ref(true);
 const genSymbols = ref(false);
 
 async function generatePw() {
+  if (!isTauri) return;
   try {
     const pw = await invoke("generate_password", {
       length: genLength.value,
@@ -150,7 +153,7 @@ async function generatePw() {
 }
 
 async function checkPasswordPwned() {
-  if (!form.password || form.password.length < 4) {
+  if (!isTauri || !form.password || form.password.length < 4) {
     pwnedCheck.checked = false;
     pwnedCheck.is_pwned = false;
     pwnedCheck.breach_count = 0;
@@ -170,6 +173,7 @@ async function checkPasswordPwned() {
 }
 
 async function handleSave() {
+  if (!isTauri) return;
   try {
     const entry = {
       id: props.editEntry?.id || crypto.randomUUID(),
