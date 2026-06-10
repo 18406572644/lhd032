@@ -146,7 +146,7 @@ const isEdit = computed(() => !!props.editEntry);
 const showPw = ref(false);
 const showGenerator = ref(false);
 const saving = ref(false);
-const passwordLocked = computed(() => isEdit.value && !form.password);
+const passwordLocked = ref(true);
 
 const toast = reactive({
   show: false,
@@ -255,7 +255,10 @@ async function handleSave() {
       url: form.url.trim(),
       notes: form.notes.trim(),
       category: form.category,
-      created_at: props.editEntry?.created_at || new Date().toISOString().split("T")[0]
+      created_at: props.editEntry?.created_at || new Date().toISOString().split("T")[0],
+      is_pwned: pwnedCheck.is_pwned,
+      breach_count: pwnedCheck.breach_count,
+      last_pwned_check: pwnedCheck.checked ? new Date().toISOString() : (props.editEntry?.last_pwned_check || "")
     };
     if (isEdit.value) {
       await invoke("update_entry", { entry });
@@ -288,9 +291,10 @@ watch(() => props.editEntry, (newVal) => {
     form.url = newVal.url || "";
     form.notes = newVal.notes || "";
     form.category = newVal.category || "website";
-    pwnedCheck.checked = false;
-    pwnedCheck.is_pwned = false;
-    pwnedCheck.breach_count = 0;
+    passwordLocked.value = !newVal.is_pwned;
+    pwnedCheck.checked = !!newVal.last_pwned_check;
+    pwnedCheck.is_pwned = !!newVal.is_pwned;
+    pwnedCheck.breach_count = newVal.breach_count || 0;
   } else {
     form.name = "";
     form.username = "";
@@ -298,6 +302,7 @@ watch(() => props.editEntry, (newVal) => {
     form.url = "";
     form.notes = "";
     form.category = "website";
+    passwordLocked.value = false;
     pwnedCheck.checked = false;
     pwnedCheck.is_pwned = false;
     pwnedCheck.breach_count = 0;

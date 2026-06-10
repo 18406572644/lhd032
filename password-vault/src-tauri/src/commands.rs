@@ -139,19 +139,18 @@ pub fn update_entry(entry: VaultEntry, vault: State<AppVault>, key_state: State<
     drop(storage);
 
     let mut encrypted_entry = entry.clone();
-    if encrypted_entry.encrypted_password.is_empty() {
+    let password_changed = !encrypted_entry.encrypted_password.is_empty();
+    if !password_changed {
         if let Some(prev) = existing.as_ref() {
             encrypted_entry.encrypted_password = prev.encrypted_password.clone();
+            encrypted_entry.is_pwned = prev.is_pwned;
+            encrypted_entry.breach_count = prev.breach_count;
+            encrypted_entry.last_pwned_check = prev.last_pwned_check.clone();
         } else {
             return Err("entry not found".to_string());
         }
     } else {
         encrypted_entry.encrypted_password = crypto::encrypt(&entry.encrypted_password, &master_key, &entry.id)?;
-    }
-    if let (Some(prev), false) = (existing.as_ref(), encrypted_entry.is_pwned) {
-        encrypted_entry.is_pwned = prev.is_pwned;
-        encrypted_entry.breach_count = prev.breach_count;
-        encrypted_entry.last_pwned_check = prev.last_pwned_check.clone();
     }
     let storage = vault.0.lock().map_err(|e| e.to_string())?;
     storage.update_entry(encrypted_entry);
