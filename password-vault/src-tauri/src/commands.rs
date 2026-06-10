@@ -73,12 +73,17 @@ impl Default for SecurityManager {
 }
 
 #[tauri::command]
-pub fn setup_master_password(password: String, vault: State<AppVault>) -> Result<String, String> {
+pub fn setup_master_password(password: String, vault: State<AppVault>, key_state: State<MasterKey>) -> Result<String, String> {
     let storage = vault.0.lock().map_err(|e| e.to_string())?;
     let salt = crypto::generate_salt();
     let hash = crypto::hash_password(&password, &salt);
     let salt_hex = hex::encode(&salt);
     storage.set_master_password(&salt_hex, &hash);
+    drop(storage);
+
+    let master_key = crypto::derive_key(&password, &salt);
+    let mut mk = key_state.0.lock().map_err(|e| e.to_string())?;
+    *mk = Some(master_key);
     Ok("ok".to_string())
 }
 
@@ -127,9 +132,27 @@ pub fn add_entry(entry: VaultEntry, vault: State<AppVault>, key_state: State<Mas
 pub fn update_entry(entry: VaultEntry, vault: State<AppVault>, key_state: State<MasterKey>) -> Result<String, String> {
     let mk = key_state.0.lock().map_err(|e| e.to_string())?;
     let master_key = mk.ok_or("not unlocked")?;
-    let encrypted = crypto::encrypt(&entry.encrypted_password, &master_key, &entry.id)?;
+    let storage = vault.0.lock().map_err(|e| e.to_string())?;
+    let entries = storage.get_entries();
+    let existing = entries.iter().find(|e| e.id == entry.id).cloned();
+    drop(entries);
+    drop(storage);
+
     let mut encrypted_entry = entry.clone();
-    encrypted_entry.encrypted_password = encrypted;
+    if encrypted_entry.encrypted_password.is_empty() {
+        if let Some(prev) = existing.as_ref() {
+            encrypted_entry.encrypted_password = prev.encrypted_password.clone();
+        } else {
+            return Err("entry not found".to_string());
+        }
+    } else {
+        encrypted_entry.encrypted_password = crypto::encrypt(&entry.encrypted_password, &master_key, &entry.id)?;
+    }
+    if let (Some(prev), false) = (existing.as_ref(), encrypted_entry.is_pwned) {
+        encrypted_entry.is_pwned = prev.is_pwned;
+        encrypted_entry.breach_count = prev.breach_count;
+        encrypted_entry.last_pwned_check = prev.last_pwned_check.clone();
+    }
     let storage = vault.0.lock().map_err(|e| e.to_string())?;
     storage.update_entry(encrypted_entry);
     Ok("ok".to_string())
