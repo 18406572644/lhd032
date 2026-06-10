@@ -6,6 +6,9 @@
     "core:default",
     "clipboard-manager:allow-write-text",
     "clipboard-manager:allow-read-text",
-    "clipboard-manager:allow-clear"
+    "clipboard-manager:allow-clear",
+    "notification:allow-notify",
+    "notification:allow-is-permission-granted",
+    "notification:default"
   ]
 }

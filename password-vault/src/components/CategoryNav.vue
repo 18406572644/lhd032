@@ -11,8 +11,12 @@
         :class="[
           'flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-all duration-150',
           active === cat.key
-            ? 'bg-primary text-white shadow-md shadow-primary/20'
-            : 'text-text-muted hover:bg-surface-light hover:text-text'
+            ? (cat.danger
+                ? 'bg-danger text-white shadow-md shadow-danger/20'
+                : 'bg-primary text-white shadow-md shadow-primary/20')
+            : (cat.danger
+                ? 'text-danger/70 hover:bg-danger/10 hover:text-danger'
+                : 'text-text-muted hover:bg-surface-light hover:text-text')
         ]"
       >
         <span class="flex items-center gap-2">
@@ -40,6 +44,7 @@ defineEmits(["select"]);
 
 const categories = [
   { key: "all", label: "全部", icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>' },
+  { key: "pwned", label: "已泄露", icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>', danger: true },
   { key: "website", label: "网站", icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>' },
   { key: "app", label: "应用", icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>' },
   { key: "bank", label: "银行卡", icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>' },

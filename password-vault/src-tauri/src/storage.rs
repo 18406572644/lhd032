@@ -13,6 +13,12 @@ pub struct VaultEntry {
     pub notes: String,
     pub category: String,
     pub created_at: String,
+    #[serde(default)]
+    pub is_pwned: bool,
+    #[serde(default)]
+    pub breach_count: u64,
+    #[serde(default)]
+    pub last_pwned_check: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

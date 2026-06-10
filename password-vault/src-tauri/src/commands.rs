@@ -1,10 +1,13 @@
 use crate::crypto;
 use crate::storage::{VaultEntry, VaultStorage};
+use crate::hibp::{HibpManager, HibpSettings, PwnedResult};
 use std::sync::Mutex;
 use tauri::State;
+use chrono::Utc;
 
 pub struct AppVault(pub Mutex<VaultStorage>);
 pub struct MasterKey(pub Mutex<Option<[u8; 32]>>);
+pub struct AppHibp(pub Mutex<HibpManager>);
 
 #[tauri::command]
 pub fn setup_master_password(password: String, vault: State<AppVault>) -> Result<String, String> {
@@ -86,4 +89,88 @@ pub fn decrypt_password(entry_id: String, encrypted: String, key_state: State<Ma
 #[tauri::command]
 pub fn generate_password(length: usize, use_uppercase: bool, use_lowercase: bool, use_digits: bool, use_symbols: bool) -> String {
     crypto::generate_random_password(length, use_uppercase, use_lowercase, use_digits, use_symbols)
+}
+
+#[tauri::command]
+pub fn get_hibp_settings(hibp: State<AppHibp>) -> Result<HibpSettings, String> {
+    let manager = hibp.0.lock().map_err(|e| e.to_string())?;
+    Ok(manager.get_settings())
+}
+
+#[tauri::command]
+pub fn save_hibp_settings(settings: HibpSettings, hibp: State<AppHibp>) -> Result<String, String> {
+    let manager = hibp.0.lock().map_err(|e| e.to_string())?;
+    manager.save_settings(settings);
+    Ok("ok".to_string())
+}
+
+#[tauri::command]
+pub fn check_single_password(
+    password: String,
+    hibp: State<AppHibp>,
+) -> Result<(bool, u64), String> {
+    let manager = hibp.0.lock().map_err(|e| e.to_string())?;
+    manager.check_password(&password)
+}
+
+#[tauri::command]
+pub fn batch_scan_passwords(
+    vault: State<AppVault>,
+    key_state: State<MasterKey>,
+    hibp: State<AppHibp>,
+) -> Result<Vec<PwnedResult>, String> {
+    let mk = key_state.0.lock().map_err(|e| e.to_string())?;
+    let master_key = mk.ok_or("not unlocked")?;
+
+    let storage = vault.0.lock().map_err(|e| e.to_string())?;
+    let entries = storage.get_entries();
+    drop(storage);
+
+    let mut passwords: Vec<(String, String)> = Vec::new();
+    for entry in &entries {
+        match crypto::decrypt(&entry.encrypted_password, &master_key, &entry.id) {
+            Ok(pw) => passwords.push((entry.id.clone(), pw)),
+            Err(_) => {}
+        }
+    }
+
+    let manager = hibp.0.lock().map_err(|e| e.to_string())?;
+    let results = manager.batch_check(passwords, |_, _| {});
+
+    let storage = vault.0.lock().map_err(|e| e.to_string())?;
+    let now = Utc::now().to_rfc3339();
+    for result in &results {
+        let entries = storage.get_entries();
+        if let Some(pos) = entries.iter().position(|e| e.id == result.entry_id) {
+            let mut entry = entries[pos].clone();
+            entry.is_pwned = result.is_pwned;
+            entry.breach_count = result.breach_count;
+            entry.last_pwned_check = Some(now.clone());
+            storage.update_entry(entry);
+        }
+    }
+
+    let manager = hibp.0.lock().map_err(|e| e.to_string())?;
+    manager.update_last_scan(now);
+
+    Ok(results)
+}
+
+#[tauri::command]
+pub fn load_offline_hibp_db(hibp: State<AppHibp>) -> Result<bool, String> {
+    let manager = hibp.0.lock().map_err(|e| e.to_string())?;
+    manager.load_offline_db()
+}
+
+#[tauri::command]
+pub fn is_offline_db_loaded(hibp: State<AppHibp>) -> Result<bool, String> {
+    let manager = hibp.0.lock().map_err(|e| e.to_string())?;
+    Ok(manager.is_offline_loaded())
+}
+
+#[tauri::command]
+pub fn get_pwned_entries(vault: State<AppVault>) -> Result<Vec<VaultEntry>, String> {
+    let storage = vault.0.lock().map_err(|e| e.to_string())?;
+    let entries = storage.get_entries();
+    Ok(entries.into_iter().filter(|e| e.is_pwned).collect())
 }
