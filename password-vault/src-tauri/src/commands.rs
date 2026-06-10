@@ -1,5 +1,5 @@
 use crate::crypto;
-use crate::storage::{VaultEntry, VaultStorage};
+use crate::storage::{VaultEntry, VaultStorage, PasswordHistory, MAX_HISTORY_ENTRIES};
 use crate::hibp::{HibpManager, HibpSettings, PwnedResult};
 use std::sync::Mutex;
 use tauri::State;
@@ -140,20 +140,97 @@ pub fn update_entry(entry: VaultEntry, vault: State<AppVault>, key_state: State<
 
     let mut encrypted_entry = entry.clone();
     let password_changed = !encrypted_entry.encrypted_password.is_empty();
+
     if !password_changed {
         if let Some(prev) = existing.as_ref() {
             encrypted_entry.encrypted_password = prev.encrypted_password.clone();
             encrypted_entry.is_pwned = prev.is_pwned;
             encrypted_entry.breach_count = prev.breach_count;
             encrypted_entry.last_pwned_check = prev.last_pwned_check.clone();
+            encrypted_entry.history = prev.history.clone();
         } else {
             return Err("entry not found".to_string());
         }
     } else {
+        if let Some(prev) = existing.as_ref() {
+            let old_encrypted = prev.encrypted_password.clone();
+            if !old_encrypted.is_empty() {
+                let mut history = prev.history.clone();
+                history.push(PasswordHistory {
+                    encrypted_password: old_encrypted,
+                    changed_at: Utc::now().to_rfc3339(),
+                });
+                if history.len() > MAX_HISTORY_ENTRIES {
+                    let overflow = history.len() - MAX_HISTORY_ENTRIES;
+                    history.drain(0..overflow);
+                }
+                encrypted_entry.history = history;
+            } else {
+                encrypted_entry.history = prev.history.clone();
+            }
+        }
         encrypted_entry.encrypted_password = crypto::encrypt(&entry.encrypted_password, &master_key, &entry.id)?;
     }
     let storage = vault.0.lock().map_err(|e| e.to_string())?;
     storage.update_entry(encrypted_entry);
+    Ok("ok".to_string())
+}
+
+#[tauri::command]
+pub fn decrypt_history_password(
+    entry_id: String,
+    encrypted: String,
+    key_state: State<MasterKey>,
+) -> Result<String, String> {
+    let mk = key_state.0.lock().map_err(|e| e.to_string())?;
+    let master_key = mk.ok_or("not unlocked")?;
+    crypto::decrypt(&encrypted, &master_key, &entry_id)
+}
+
+#[tauri::command]
+pub fn restore_history_password(
+    entry_id: String,
+    history_index: usize,
+    vault: State<AppVault>,
+    key_state: State<MasterKey>,
+) -> Result<String, String> {
+    let mk = key_state.0.lock().map_err(|e| e.to_string())?;
+    let _master_key = mk.ok_or("not unlocked")?;
+
+    let storage = vault.0.lock().map_err(|e| e.to_string())?;
+    let entries = storage.get_entries();
+    let existing = entries.iter().find(|e| e.id == entry_id).cloned();
+    drop(entries);
+    drop(storage);
+
+    let existing = existing.ok_or("entry not found")?;
+    if history_index >= existing.history.len() {
+        return Err("history index out of range".to_string());
+    }
+
+    let history_entry = &existing.history[history_index];
+    let restored_encrypted = history_entry.encrypted_password.clone();
+
+    let mut new_history = existing.history.clone();
+    new_history.truncate(history_index);
+    new_history.push(PasswordHistory {
+        encrypted_password: existing.encrypted_password.clone(),
+        changed_at: Utc::now().to_rfc3339(),
+    });
+    if new_history.len() > MAX_HISTORY_ENTRIES {
+        let overflow = new_history.len() - MAX_HISTORY_ENTRIES;
+        new_history.drain(0..overflow);
+    }
+
+    let storage = vault.0.lock().map_err(|e| e.to_string())?;
+    storage.update_entry_with_history(&entry_id, |e| {
+        e.encrypted_password = restored_encrypted;
+        e.history = new_history;
+        e.is_pwned = false;
+        e.breach_count = 0;
+        e.last_pwned_check = None;
+    });
+
     Ok("ok".to_string())
 }
 

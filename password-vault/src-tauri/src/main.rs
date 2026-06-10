@@ -26,6 +26,8 @@ pub fn run() {
             commands::update_entry,
             commands::delete_entry,
             commands::decrypt_password,
+            commands::decrypt_history_password,
+            commands::restore_history_password,
             commands::generate_password,
             commands::get_hibp_settings,
             commands::save_hibp_settings,

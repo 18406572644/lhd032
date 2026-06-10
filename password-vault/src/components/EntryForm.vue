@@ -113,6 +113,70 @@
             <option value="note">安全笔记</option>
           </select>
         </div>
+
+        <div v-if="isEdit && editEntry?.history && editEntry.history.length > 0" class="border-t border-white/5 pt-4">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <svg class="w-4 h-4 text-text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              <span class="text-sm font-medium text-text">密码变更历史</span>
+              <span class="text-xs text-text-muted">(最近 {{ editEntry.history.length }} 条)</span>
+            </div>
+            <button
+              v-if="!showHistory"
+              @click="showHistory = true"
+              class="text-xs text-primary-light hover:text-primary transition"
+            >展开</button>
+            <button
+              v-else
+              @click="showHistory = false"
+              class="text-xs text-text-muted hover:text-text transition"
+            >收起</button>
+          </div>
+
+          <div v-if="showHistory" class="space-y-2 max-h-64 overflow-y-auto pr-1">
+            <div
+              v-for="(item, index) in [...editEntry.history].reverse()"
+              :key="index"
+              class="relative pl-6 pb-3 border-l border-white/10 last:border-l-0 last:pb-0"
+            >
+              <div class="absolute left-0 top-0 -translate-x-1/2 w-3 h-3 rounded-full bg-primary/50 border-2 border-surface-light"></div>
+
+              <div class="bg-surface-light/40 rounded-lg p-3 border border-white/5">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-xs text-text-muted">{{ formatHistoryDate(item.changed_at) }}</span>
+                  <div class="flex items-center gap-1">
+                    <button
+                      @click="toggleHistoryPassword(item, editEntry.history.length - 1 - index)"
+                      class="p-1 rounded hover:bg-surface-lighter text-text-muted hover:text-text transition"
+                      :title="visibleHistory.has(editEntry.history.length - 1 - index) ? '隐藏密码' : '查看密码'"
+                    >
+                      <svg v-if="!visibleHistory.has(editEntry.history.length - 1 - index)" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                      <svg v-else class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+                    </button>
+                    <button
+                      @click="copyHistoryPassword(item, editEntry.history.length - 1 - index)"
+                      class="p-1 rounded hover:bg-surface-lighter text-text-muted hover:text-primary-light transition"
+                      title="复制此密码"
+                    >
+                      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    </button>
+                    <button
+                      @click="confirmRestore(editEntry.history.length - 1 - index, item.changed_at)"
+                      class="p-1 rounded hover:bg-primary/20 text-text-muted hover:text-primary-light transition"
+                      title="恢复到此版本"
+                    >
+                      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="bg-bg/60 rounded px-3 py-2 flex items-center justify-between">
+                  <span v-if="!visibleHistory.has(editEntry.history.length - 1 - index)" class="font-mono-pw text-text-muted text-sm tracking-widest">••••••••••</span>
+                  <span v-else class="font-mono-pw text-text text-sm break-all">{{ decryptedHistory[editEntry.history.length - 1 - index] || '解密中...' }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="px-6 py-4 border-t border-white/5 flex justify-end gap-3">
@@ -147,6 +211,9 @@ const showPw = ref(false);
 const showGenerator = ref(false);
 const saving = ref(false);
 const passwordLocked = ref(true);
+const showHistory = ref(true);
+const visibleHistory = ref(new Set());
+const decryptedHistory = ref({});
 
 const toast = reactive({
   show: false,
@@ -204,6 +271,106 @@ async function generatePw() {
   } catch (e) {
     console.error(e);
     showToast("error", "密码生成失败: " + (e.message || e));
+  }
+}
+
+function formatHistoryDate(dateStr) {
+  try {
+    const date = new Date(dateStr);
+    return date.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch {
+    return dateStr;
+  }
+}
+
+async function toggleHistoryPassword(item, realIndex) {
+  const newSet = new Set(visibleHistory.value);
+  if (newSet.has(realIndex)) {
+    newSet.delete(realIndex);
+    visibleHistory.value = newSet;
+    return;
+  }
+  if (!isTauri) {
+    showToast("error", "Tauri 运行时不可用");
+    return;
+  }
+  try {
+    const pw = await invoke("decrypt_history_password", {
+      entryId: props.editEntry.id,
+      encrypted: item.encrypted_password
+    });
+    decryptedHistory.value[realIndex] = pw;
+    newSet.add(realIndex);
+    visibleHistory.value = newSet;
+  } catch (e) {
+    console.error("decrypt history failed:", e);
+    showToast("error", "解密历史密码失败");
+  }
+}
+
+async function copyHistoryPassword(item, realIndex) {
+  if (!isTauri) return;
+  try {
+    let pw = decryptedHistory.value[realIndex];
+    if (!pw) {
+      pw = await invoke("decrypt_history_password", {
+        entryId: props.editEntry.id,
+        encrypted: item.encrypted_password
+      });
+      decryptedHistory.value[realIndex] = pw;
+      const newSet = new Set(visibleHistory.value);
+      newSet.add(realIndex);
+      visibleHistory.value = newSet;
+    }
+    const { writeText } = await import("@tauri-apps/plugin-clipboard-manager");
+    await writeText(pw);
+    showToast("success", "历史密码已复制到剪贴板");
+    setTimeout(async () => {
+      try {
+        await writeText("");
+      } catch {}
+    }, 15000);
+  } catch (e) {
+    console.error("copy history failed:", e);
+    showToast("error", "复制失败");
+  }
+}
+
+async function confirmRestore(realIndex, changedAt) {
+  const dateStr = formatHistoryDate(changedAt);
+  if (!confirm(`确定要将密码恢复到 ${dateStr} 的版本吗？\n\n当前密码将被保存到历史记录中。`)) {
+    return;
+  }
+  if (!isTauri) {
+    showToast("error", "Tauri 运行时不可用");
+    return;
+  }
+  saving.value = true;
+  try {
+    await invoke("restore_history_password", {
+      entryId: props.editEntry.id,
+      historyIndex: realIndex
+    });
+    showToast("success", "密码已恢复到历史版本");
+    setTimeout(() => {
+      emit("saved");
+    }, 600);
+  } catch (e) {
+    console.error("restore failed:", e);
+    const msg = (typeof e === "string" ? e : (e?.message || String(e)));
+    if (msg.includes("not unlocked")) {
+      showToast("error", "密码库已锁定，请重新解锁后再试");
+    } else {
+      showToast("error", "恢复失败: " + msg);
+    }
+  } finally {
+    saving.value = false;
   }
 }
 
@@ -284,6 +451,8 @@ async function handleSave() {
 }
 
 watch(() => props.editEntry, (newVal) => {
+  visibleHistory.value = new Set();
+  decryptedHistory.value = {};
   if (newVal) {
     form.name = newVal.name || "";
     form.username = newVal.username || "";

@@ -4,6 +4,12 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PasswordHistory {
+    pub encrypted_password: String,
+    pub changed_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VaultEntry {
     pub id: String,
     pub name: String,
@@ -19,7 +25,11 @@ pub struct VaultEntry {
     pub breach_count: u64,
     #[serde(default)]
     pub last_pwned_check: Option<String>,
+    #[serde(default)]
+    pub history: Vec<PasswordHistory>,
 }
+
+pub const MAX_HISTORY_ENTRIES: usize = 10;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VaultData {
@@ -93,10 +103,29 @@ impl VaultStorage {
         self.save(&data);
     }
 
+    pub fn update_entry_with_history<F>(&self, entry_id: &str, updater: F)
+    where
+        F: FnOnce(&mut VaultEntry),
+    {
+        let mut data = self.data.lock().unwrap();
+        if let Some(pos) = data.entries.iter().position(|e| e.id == entry_id) {
+            updater(&mut data.entries[pos]);
+            if data.entries[pos].history.len() > MAX_HISTORY_ENTRIES {
+                let overflow = data.entries[pos].history.len() - MAX_HISTORY_ENTRIES;
+                data.entries[pos].history.drain(0..overflow);
+            }
+            self.save(&data);
+        }
+    }
+
     pub fn update_entry(&self, entry: VaultEntry) {
         let mut data = self.data.lock().unwrap();
         if let Some(pos) = data.entries.iter().position(|e| e.id == entry.id) {
             data.entries[pos] = entry;
+            if data.entries[pos].history.len() > MAX_HISTORY_ENTRIES {
+                let overflow = data.entries[pos].history.len() - MAX_HISTORY_ENTRIES;
+                data.entries[pos].history.drain(0..overflow);
+            }
             self.save(&data);
         }
     }
